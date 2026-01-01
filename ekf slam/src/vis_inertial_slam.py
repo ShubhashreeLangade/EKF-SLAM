@@ -1,21 +1,36 @@
-from imu_ekf import imu_predict
-from landmark_ekf import landmark_update
+import numpy as np
+from imu_ekf import predict_state
+from landmark_ekf import update_landmarks_lidar
 
-def run_vi_slam(mu, Sigma, landmarks, linear_vel, angular_vel, features, Q, R):
-    """
-    Full Visual-Inertial SLAM loop
-    """
-    mu_history = []
+class VisualInertialSLAM2D:
+    def __init__(self, num_landmarks, Q, R, dt):
+        self.M = num_landmarks
+        self.dt = dt
+        self.state_dim = 3 + 2*self.M
 
-    for t in range(len(linear_vel)):
-        # IMU prediction
-        mu, Sigma = imu_predict(mu, Sigma, linear_vel[t], angular_vel[t], Q)
+        self.mu = np.zeros(self.state_dim)
+        self.Sigma = np.eye(self.state_dim) * 0.01
 
-        # Landmark update
-        if t < features.shape[0]:
-            observations = features[t][:, :3]  # x, y, z only
-            landmarks = landmark_update(mu, Sigma, landmarks, observations, R)
+        self.Q = Q
+        self.R = R
+        self.history = []
 
-        mu_history.append(mu.copy())
+    def step(self, v, w, lidar):
+        self.mu, self.Sigma = predict_state(
+            self.mu, self.Sigma, v, w, self.Q, self.dt
+        )
 
-    return mu_history, landmarks
+        self.mu, self.Sigma = update_landmarks_lidar(
+            self.mu, self.Sigma, lidar, self.R
+        )
+
+        self.history.append(self.mu.copy())
+
+    def trajectory(self):
+        return np.array(self.history)[:, :2]
+
+    def landmarks(self):
+        return np.array([
+            self.mu[3+2*i:3+2*i+2]
+            for i in range(self.M)
+        ])
